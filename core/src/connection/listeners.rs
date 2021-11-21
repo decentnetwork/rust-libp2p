@@ -412,8 +412,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use futures::{future::BoxFuture, stream::BoxStream};
-
     use super::*;
     use crate::transport;
 
@@ -463,12 +461,18 @@ mod tests {
         impl transport::Transport for DummyTrans {
             type Output = ();
             type Error = std::io::Error;
-            type Listener = BoxStream<
-                'static,
-                Result<ListenerEvent<Self::ListenerUpgrade, std::io::Error>, std::io::Error>,
+            type Listener = Pin<
+                Box<
+                    dyn Stream<
+                        Item = Result<
+                            ListenerEvent<Self::ListenerUpgrade, std::io::Error>,
+                            std::io::Error,
+                        >,
+                    >,
+                >,
             >;
-            type ListenerUpgrade = BoxFuture<'static, Result<Self::Output, Self::Error>>;
-            type Dial = BoxFuture<'static, Result<Self::Output, Self::Error>>;
+            type ListenerUpgrade = Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>>>>;
+            type Dial = Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>>>>;
 
             fn listen_on(
                 self,
@@ -519,12 +523,18 @@ mod tests {
         impl transport::Transport for DummyTrans {
             type Output = ();
             type Error = std::io::Error;
-            type Listener = BoxStream<
-                'static,
-                Result<ListenerEvent<Self::ListenerUpgrade, std::io::Error>, std::io::Error>,
+            type Listener = Pin<
+                Box<
+                    dyn Stream<
+                        Item = Result<
+                            ListenerEvent<Self::ListenerUpgrade, std::io::Error>,
+                            std::io::Error,
+                        >,
+                    >,
+                >,
             >;
-            type ListenerUpgrade = BoxFuture<'static, Result<Self::Output, Self::Error>>;
-            type Dial = BoxFuture<'static, Result<Self::Output, Self::Error>>;
+            type ListenerUpgrade = Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>>>>;
+            type Dial = Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>>>>;
 
             fn listen_on(
                 self,

@@ -28,15 +28,15 @@ use libp2p_core::connection::ConnectedPoint;
 use libp2p_core::either::EitherTransport;
 use libp2p_core::multiaddr::{Multiaddr, Protocol};
 use libp2p_core::transport::{MemoryTransport, Transport, TransportError};
-use libp2p_core::{identity, upgrade, PeerId};
+use libp2p_core::{identity, PeerId};
 use libp2p_identify::{Identify, IdentifyConfig, IdentifyEvent, IdentifyInfo};
 use libp2p_kad::{GetClosestPeersOk, Kademlia, KademliaEvent, QueryResult};
 use libp2p_ping as ping;
 use libp2p_plaintext::PlainText2Config;
-use libp2p_relay::{Relay, RelayConfig};
+use libp2p_relay::v1::{new_transport_and_behaviour, Relay, RelayConfig};
 use libp2p_swarm::protocols_handler::KeepAlive;
 use libp2p_swarm::{
-    dial_opts::DialOpts, DialError, DummyBehaviour, NetworkBehaviour, NetworkBehaviourAction,
+    DialError, DummyBehaviour, NetworkBehaviour, NetworkBehaviourAction,
     NetworkBehaviourEventProcess, PollParameters, Swarm, SwarmEvent,
 };
 use std::task::{Context, Poll};
@@ -1284,7 +1284,7 @@ fn build_swarm(reachability: Reachability, relay_mode: RelayMode) -> Swarm<Combi
         Reachability::Routable => EitherTransport::Right(transport),
     };
 
-    let (transport, relay_behaviour) = libp2p_relay::new_transport_and_behaviour(
+    let (transport, relay_behaviour) = new_transport_and_behaviour(
         RelayConfig {
             actively_connect_to_dst_nodes: relay_mode.into(),
             ..Default::default()
@@ -1293,7 +1293,7 @@ fn build_swarm(reachability: Reachability, relay_mode: RelayMode) -> Swarm<Combi
     );
 
     let transport = transport
-        .upgrade(upgrade::Version::V1)
+        .upgrade()
         .authenticate(plaintext)
         .multiplex(libp2p_yamux::YamuxConfig::default())
         .boxed();
@@ -1326,10 +1326,10 @@ fn build_keep_alive_swarm() -> Swarm<CombinedKeepAliveBehaviour> {
     let transport = MemoryTransport::default();
 
     let (transport, relay_behaviour) =
-        libp2p_relay::new_transport_and_behaviour(RelayConfig::default(), transport);
+        new_transport_and_behaviour(RelayConfig::default(), transport);
 
     let transport = transport
-        .upgrade(upgrade::Version::V1)
+        .upgrade()
         .authenticate(plaintext)
         .multiplex(libp2p_yamux::YamuxConfig::default())
         .boxed();
@@ -1353,7 +1353,7 @@ fn build_keep_alive_only_swarm() -> Swarm<DummyBehaviour> {
     let transport = MemoryTransport::default();
 
     let transport = transport
-        .upgrade(upgrade::Version::V1)
+        .upgrade()
         .authenticate(plaintext)
         .multiplex(libp2p_yamux::YamuxConfig::default())
         .boxed();
