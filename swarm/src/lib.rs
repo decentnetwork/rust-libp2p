@@ -1411,7 +1411,7 @@ mod tests {
     use crate::protocols_handler::DummyProtocolsHandler;
     use crate::test::{CallTraceBehaviour, MockBehaviour};
     use futures::{executor, future};
-    use libp2p::core::{identity, multiaddr, transport, upgrade};
+    use libp2p::core::{identity, multiaddr, transport};
     use libp2p::plaintext;
     use libp2p::yamux;
 
@@ -1431,7 +1431,7 @@ mod tests {
         let id_keys = identity::Keypair::generate_ed25519();
         let local_public_key = id_keys.public();
         let transport = transport::MemoryTransport::default()
-            .upgrade(upgrade::Version::V1)
+            .upgrade()
             .authenticate(plaintext::PlainText2Config {
                 local_public_key: local_public_key.clone(),
             })

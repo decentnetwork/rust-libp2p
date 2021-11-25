@@ -39,13 +39,14 @@ use std::{
 type TestTransport = transport::Boxed<(PeerId, StreamMuxerBox)>;
 type TestNetwork = Network<TestTransport, TestHandler>;
 
-fn mk_transport(up: upgrade::Version) -> (PeerId, TestTransport) {
+// TODO: Fix _up
+fn mk_transport(_up: upgrade::Version) -> (PeerId, TestTransport) {
     let keys = identity::Keypair::generate_ed25519();
     let id = keys.public().to_peer_id();
     (
         id,
         MemoryTransport::default()
-            .upgrade(up)
+            .upgrade()
             .authenticate(PlainText2Config {
                 local_public_key: keys.public(),
             })

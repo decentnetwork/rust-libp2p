@@ -23,7 +23,7 @@ mod util;
 use futures::prelude::*;
 use libp2p_core::identity;
 use libp2p_core::transport::{MemoryTransport, Transport};
-use libp2p_core::upgrade::{self, InboundUpgrade, OutboundUpgrade, UpgradeInfo};
+use libp2p_core::upgrade::{InboundUpgrade, OutboundUpgrade, UpgradeInfo};
 use libp2p_mplex::MplexConfig;
 use libp2p_noise as noise;
 use multiaddr::{Multiaddr, Protocol};
@@ -85,7 +85,7 @@ fn upgrade_pipeline() {
         .into_authentic(&listener_keys)
         .unwrap();
     let listener_transport = MemoryTransport::default()
-        .upgrade(upgrade::Version::V1)
+        .upgrade()
         .authenticate(noise::NoiseConfig::xx(listener_noise_keys).into_authenticated())
         .apply(HelloUpgrade {})
         .apply(HelloUpgrade {})
@@ -103,7 +103,7 @@ fn upgrade_pipeline() {
         .into_authentic(&dialer_keys)
         .unwrap();
     let dialer_transport = MemoryTransport::default()
-        .upgrade(upgrade::Version::V1)
+        .upgrade()
         .authenticate(noise::NoiseConfig::xx(dialer_noise_keys).into_authenticated())
         .apply(HelloUpgrade {})
         .apply(HelloUpgrade {})
