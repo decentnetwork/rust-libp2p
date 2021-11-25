@@ -7,7 +7,7 @@ use libp2p_core::{
     muxing::{StreamMuxer, StreamMuxerBox},
     network::{Network, NetworkConfig},
     transport::{self, memory::MemoryTransport},
-    upgrade, Multiaddr, PeerId, Transport,
+    Multiaddr, PeerId, Transport,
 };
 use libp2p_mplex as mplex;
 use libp2p_noise as noise;
@@ -24,7 +24,7 @@ pub fn test_network(cfg: NetworkConfig) -> TestNetwork {
         .into_authentic(&local_key)
         .unwrap();
     let transport: TestTransport = MemoryTransport::default()
-        .upgrade(upgrade::Version::V1)
+        .upgrade()
         .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
         .multiplex(mplex::MplexConfig::new())
         .boxed();
