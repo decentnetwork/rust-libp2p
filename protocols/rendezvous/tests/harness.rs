@@ -23,7 +23,6 @@ use futures::stream::FusedStream;
 use futures::StreamExt;
 use futures::{future, Stream};
 use libp2p::core::muxing::StreamMuxerBox;
-use libp2p::core::transport::upgrade::Version;
 use libp2p::core::transport::MemoryTransport;
 use libp2p::core::upgrade::SelectUpgrade;
 use libp2p::core::{identity, Multiaddr, PeerId, Transport};
@@ -52,7 +51,7 @@ where
     let noise = NoiseConfig::xx(dh_keys).into_authenticated();
 
     let transport = MemoryTransport::default()
-        .upgrade(Version::V1)
+        .upgrade()
         .authenticate(noise)
         .multiplex(SelectUpgrade::new(
             YamuxConfig::default(),
