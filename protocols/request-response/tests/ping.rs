@@ -26,7 +26,7 @@ use libp2p_core::{
     identity,
     muxing::StreamMuxerBox,
     transport::{self, Transport},
-    upgrade::{self, read_length_prefixed, write_length_prefixed},
+    upgrade::{read_length_prefixed, write_length_prefixed},
     Multiaddr, PeerId,
 };
 use libp2p_noise::{Keypair, NoiseConfig, X25519Spec};
@@ -302,7 +302,7 @@ fn mk_transport() -> (PeerId, transport::Boxed<(PeerId, StreamMuxerBox)>) {
         peer_id,
         TcpConfig::new()
             .nodelay(true)
-            .upgrade(upgrade::Version::V1)
+            .upgrade()
             .authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
             .multiplex(libp2p_yamux::YamuxConfig::default())
             .boxed(),

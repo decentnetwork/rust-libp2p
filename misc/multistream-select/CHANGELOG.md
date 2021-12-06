@@ -9,6 +9,9 @@
 - Implement `From<io::Error> for ProtocolError` instead of `Into`.
   [PR 2169](https://github.com/libp2p/rust-libp2p/pull/2169)
 
+[simultaneous open extension]: https://github.com/libp2p/specs/blob/master/connections/simopen.md
+[PR 2066]: https://github.com/libp2p/rust-libp2p/pull/2066
+
 # 0.10.3 [2021-03-17]
 
 - Update dependencies.
