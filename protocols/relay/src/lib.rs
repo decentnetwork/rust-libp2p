@@ -96,6 +96,9 @@ mod protocol;
 mod transport;
 
 pub use behaviour::{Relay, RelayConfig};
+pub use protocol::{
+    IncomingDstReqError, OutgoingDstReqError, OutgoingRelayReqError, RelayListenError,
+};
 pub use transport::{RelayError, RelayTransport};
 
 use libp2p_core::Transport;
