@@ -27,7 +27,7 @@ mod message_proto {
 
 pub mod client;
 mod copy_future;
-mod protocol;
+pub mod protocol;
 pub mod relay;
 
 /// The ID of an outgoing / incoming, relay / destination request.
