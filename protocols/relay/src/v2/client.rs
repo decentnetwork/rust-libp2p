@@ -23,9 +23,9 @@
 mod handler;
 pub mod transport;
 
-use crate::v2::protocol::inbound_stop;
+use crate::v2::protocol::{self, inbound_stop};
 use bytes::Bytes;
-use futures::channel::mpsc::{Receiver, Sender};
+use futures::channel::mpsc::Receiver;
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, FutureExt};
 use futures::io::{AsyncRead, AsyncWrite};
@@ -35,10 +35,9 @@ use libp2p_core::connection::{ConnectedPoint, ConnectionId};
 use libp2p_core::{Multiaddr, PeerId};
 use libp2p_swarm::dial_opts::DialOpts;
 use libp2p_swarm::{
-    DialError, NegotiatedSubstream, NetworkBehaviour, NetworkBehaviourAction, NotifyHandler,
-    PollParameters,
+    NegotiatedSubstream, NetworkBehaviour, NetworkBehaviourAction, NotifyHandler, PollParameters,
 };
-use std::collections::{HashMap, VecDeque};
+use std::collections::{hash_map, HashMap, VecDeque};
 use std::io::{Error, IoSlice};
 use std::ops::DerefMut;
 use std::pin::Pin;
@@ -52,14 +51,24 @@ pub enum Event {
         relay_peer_id: PeerId,
         /// Indicates whether the request replaces an existing reservation.
         renewal: bool,
+        limit: Option<protocol::Limit>,
     },
     ReservationReqFailed {
         relay_peer_id: PeerId,
         /// Indicates whether the request replaces an existing reservation.
         renewal: bool,
     },
+    OutboundCircuitEstablished {
+        relay_peer_id: PeerId,
+        limit: Option<protocol::Limit>,
+    },
     OutboundCircuitReqFailed {
         relay_peer_id: PeerId,
+    },
+    /// An inbound circuit has been established.
+    InboundCircuitEstablished {
+        src_peer_id: PeerId,
+        limit: Option<protocol::Limit>,
     },
     /// An inbound circuit request has been denied.
     InboundCircuitReqDenied {
@@ -77,10 +86,9 @@ pub struct Client {
 
     from_transport: Receiver<transport::TransportToBehaviourMsg>,
     connected_peers: HashMap<PeerId, Vec<ConnectionId>>,
-    rqsts_pending_connection: HashMap<PeerId, Vec<RqstPendingConnection>>,
 
     /// Queue of actions to return when polled.
-    queued_actions: VecDeque<NetworkBehaviourAction<Event, handler::Prototype>>,
+    queued_actions: VecDeque<Event>,
 }
 
 impl Client {
@@ -92,7 +100,6 @@ impl Client {
             local_peer_id,
             from_transport,
             connected_peers: Default::default(),
-            rqsts_pending_connection: Default::default(),
             queued_actions: Default::default(),
         };
         (transport, behaviour)
@@ -104,14 +111,8 @@ impl NetworkBehaviour for Client {
     type OutEvent = Event;
 
     fn new_handler(&mut self) -> Self::ProtocolsHandler {
-        handler::Prototype::new(self.local_peer_id)
+        handler::Prototype::new(self.local_peer_id, None)
     }
-
-    fn addresses_of_peer(&mut self, _: &PeerId) -> Vec<Multiaddr> {
-        vec![]
-    }
-
-    fn inject_connected(&mut self, _peer_id: &PeerId) {}
 
     fn inject_connection_established(
         &mut self,
@@ -124,54 +125,7 @@ impl NetworkBehaviour for Client {
             .entry(*peer_id)
             .or_default()
             .push(*connection_id);
-
-        for rqst in self
-            .rqsts_pending_connection
-            .remove(peer_id)
-            .map(|rqsts| rqsts.into_iter())
-            .into_iter()
-            .flatten()
-        {
-            match rqst {
-                RqstPendingConnection::Reservation { to_listener, .. } => {
-                    self.queued_actions
-                        .push_back(NetworkBehaviourAction::NotifyHandler {
-                            peer_id: *peer_id,
-                            handler: NotifyHandler::One(*connection_id),
-                            event: handler::In::Reserve { to_listener },
-                        });
-                }
-                RqstPendingConnection::Circuit {
-                    send_back,
-                    dst_peer_id,
-                    ..
-                } => {
-                    self.queued_actions
-                        .push_back(NetworkBehaviourAction::NotifyHandler {
-                            peer_id: *peer_id,
-                            handler: NotifyHandler::One(*connection_id),
-                            event: handler::In::EstablishCircuit {
-                                send_back,
-                                dst_peer_id,
-                            },
-                        });
-                }
-            }
-        }
     }
-
-    fn inject_dial_failure(
-        &mut self,
-        peer_id: Option<PeerId>,
-        _handler: handler::Prototype,
-        _error: &DialError,
-    ) {
-        if let Some(peer_id) = peer_id {
-            self.rqsts_pending_connection.remove(&peer_id);
-        }
-    }
-
-    fn inject_disconnected(&mut self, _peer: &PeerId) {}
 
     fn inject_connection_closed(
         &mut self,
@@ -180,13 +134,23 @@ impl NetworkBehaviour for Client {
         _: &ConnectedPoint,
         _handler: handler::Handler,
     ) {
-        self.connected_peers.get_mut(peer_id).map(|cs| {
-            cs.remove(
-                cs.iter()
+        match self.connected_peers.entry(*peer_id) {
+            hash_map::Entry::Occupied(mut connections) => {
+                let position = connections
+                    .get()
+                    .iter()
                     .position(|c| c == connection_id)
-                    .expect("Connection to be known."),
-            )
-        });
+                    .expect("Connection to be known.");
+                connections.get_mut().remove(position);
+
+                if connections.get().is_empty() {
+                    connections.remove();
+                }
+            }
+            hash_map::Entry::Vacant(_) => {
+                unreachable!("`inject_connection_closed` for unconnected peer.")
+            }
+        };
     }
 
     fn inject_event(
@@ -196,42 +160,41 @@ impl NetworkBehaviour for Client {
         handler_event: handler::Event,
     ) {
         match handler_event {
-            handler::Event::ReservationReqAccepted { renewal } => {
-                self.queued_actions
-                    .push_back(NetworkBehaviourAction::GenerateEvent(
-                        Event::ReservationReqAccepted {
-                            relay_peer_id: event_source,
-                            renewal,
-                        },
-                    ))
-            }
+            handler::Event::ReservationReqAccepted { renewal, limit } => self
+                .queued_actions
+                .push_back(Event::ReservationReqAccepted {
+                    relay_peer_id: event_source,
+                    renewal,
+                    limit,
+                }),
             handler::Event::ReservationReqFailed { renewal } => {
+                self.queued_actions.push_back(Event::ReservationReqFailed {
+                    relay_peer_id: event_source,
+                    renewal,
+                })
+            }
+            handler::Event::OutboundCircuitEstablished { limit } => {
                 self.queued_actions
-                    .push_back(NetworkBehaviourAction::GenerateEvent(
-                        Event::ReservationReqFailed {
-                            relay_peer_id: event_source,
-                            renewal,
-                        },
-                    ))
+                    .push_back(Event::OutboundCircuitEstablished {
+                        relay_peer_id: event_source,
+                        limit,
+                    })
             }
             handler::Event::OutboundCircuitReqFailed {} => {
                 self.queued_actions
-                    .push_back(NetworkBehaviourAction::GenerateEvent(
-                        Event::OutboundCircuitReqFailed {
-                            relay_peer_id: event_source,
-                        },
-                    ))
+                    .push_back(Event::OutboundCircuitReqFailed {
+                        relay_peer_id: event_source,
+                    })
             }
+            handler::Event::InboundCircuitEstablished { src_peer_id, limit } => self
+                .queued_actions
+                .push_back(Event::InboundCircuitEstablished { src_peer_id, limit }),
             handler::Event::InboundCircuitReqDenied { src_peer_id } => self
                 .queued_actions
-                .push_back(NetworkBehaviourAction::GenerateEvent(
-                    Event::InboundCircuitReqDenied { src_peer_id },
-                )),
+                .push_back(Event::InboundCircuitReqDenied { src_peer_id }),
             handler::Event::InboundCircuitReqDenyFailed { src_peer_id, error } => self
                 .queued_actions
-                .push_back(NetworkBehaviourAction::GenerateEvent(
-                    Event::InboundCircuitReqDenyFailed { src_peer_id, error },
-                )),
+                .push_back(Event::InboundCircuitReqDenyFailed { src_peer_id, error }),
         }
     }
 
@@ -241,96 +204,87 @@ impl NetworkBehaviour for Client {
         _poll_parameters: &mut impl PollParameters,
     ) -> Poll<NetworkBehaviourAction<Self::OutEvent, Self::ProtocolsHandler>> {
         if let Some(event) = self.queued_actions.pop_front() {
-            return Poll::Ready(event);
+            return Poll::Ready(NetworkBehaviourAction::GenerateEvent(event));
         }
 
-        loop {
-            match self.from_transport.poll_next_unpin(cx) {
-                Poll::Ready(Some(transport::TransportToBehaviourMsg::ListenReq {
-                    relay_peer_id,
-                    relay_addr,
-                    to_listener,
-                })) => {
-                    match self
-                        .connected_peers
-                        .get(&relay_peer_id)
-                        .and_then(|cs| cs.get(0))
-                    {
-                        Some(connection_id) => {
-                            return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
-                                peer_id: relay_peer_id,
-                                handler: NotifyHandler::One(*connection_id),
-                                event: handler::In::Reserve { to_listener },
-                            });
-                        }
-                        None => {
-                            self.rqsts_pending_connection
-                                .entry(relay_peer_id)
-                                .or_default()
-                                .push(RqstPendingConnection::Reservation { to_listener });
-                            let handler = self.new_handler();
-                            return Poll::Ready(NetworkBehaviourAction::Dial {
-                                opts: DialOpts::peer_id(relay_peer_id)
-                                    .addresses(vec![relay_addr])
-                                    .extend_addresses_through_behaviour()
-                                    .build(),
-                                handler,
-                            });
+        let action = match ready!(self.from_transport.poll_next_unpin(cx)) {
+            Some(transport::TransportToBehaviourMsg::ListenReq {
+                relay_peer_id,
+                relay_addr,
+                to_listener,
+            }) => {
+                match self
+                    .connected_peers
+                    .get(&relay_peer_id)
+                    .and_then(|cs| cs.get(0))
+                {
+                    Some(connection_id) => NetworkBehaviourAction::NotifyHandler {
+                        peer_id: relay_peer_id,
+                        handler: NotifyHandler::One(*connection_id),
+                        event: handler::In::Reserve { to_listener },
+                    },
+                    None => {
+                        let handler = handler::Prototype::new(
+                            self.local_peer_id,
+                            Some(handler::In::Reserve { to_listener }),
+                        );
+                        NetworkBehaviourAction::Dial {
+                            opts: DialOpts::peer_id(relay_peer_id)
+                                .addresses(vec![relay_addr])
+                                .extend_addresses_through_behaviour()
+                                .build(),
+                            handler,
                         }
                     }
                 }
-                Poll::Ready(Some(transport::TransportToBehaviourMsg::DialReq {
-                    relay_addr,
-                    relay_peer_id,
-                    dst_peer_id,
-                    send_back,
-                    ..
-                })) => {
-                    match self
-                        .connected_peers
-                        .get(&relay_peer_id)
-                        .and_then(|cs| cs.get(0))
-                    {
-                        Some(connection_id) => {
-                            return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
-                                peer_id: relay_peer_id,
-                                handler: NotifyHandler::One(*connection_id),
-                                event: handler::In::EstablishCircuit {
-                                    send_back,
-                                    dst_peer_id,
-                                },
-                            });
-                        }
-                        None => {
-                            self.rqsts_pending_connection
-                                .entry(relay_peer_id)
-                                .or_default()
-                                .push(RqstPendingConnection::Circuit {
-                                    dst_peer_id,
-                                    send_back,
-                                });
-                            let handler = self.new_handler();
-                            return Poll::Ready(NetworkBehaviourAction::Dial {
-                                opts: DialOpts::peer_id(relay_peer_id)
-                                    .addresses(vec![relay_addr])
-                                    .extend_addresses_through_behaviour()
-                                    .build(),
-                                handler,
-                            });
+            }
+            Some(transport::TransportToBehaviourMsg::DialReq {
+                relay_addr,
+                relay_peer_id,
+                dst_peer_id,
+                send_back,
+                ..
+            }) => {
+                match self
+                    .connected_peers
+                    .get(&relay_peer_id)
+                    .and_then(|cs| cs.get(0))
+                {
+                    Some(connection_id) => NetworkBehaviourAction::NotifyHandler {
+                        peer_id: relay_peer_id,
+                        handler: NotifyHandler::One(*connection_id),
+                        event: handler::In::EstablishCircuit {
+                            send_back,
+                            dst_peer_id,
+                        },
+                    },
+                    None => {
+                        let handler = handler::Prototype::new(
+                            self.local_peer_id,
+                            Some(handler::In::EstablishCircuit {
+                                send_back,
+                                dst_peer_id,
+                            }),
+                        );
+                        NetworkBehaviourAction::Dial {
+                            opts: DialOpts::peer_id(relay_peer_id)
+                                .addresses(vec![relay_addr])
+                                .extend_addresses_through_behaviour()
+                                .build(),
+                            handler,
                         }
                     }
                 }
-                Poll::Ready(None) => unreachable!(
-                    "`Relay` `NetworkBehaviour` polled after channel from \
+            }
+            None => unreachable!(
+                "`Relay` `NetworkBehaviour` polled after channel from \
                      `RelayTransport` has been closed. Unreachable under \
                      the assumption that the `Client` is never polled after \
                      `ClientTransport` is dropped.",
-                ),
-                Poll::Pending => break,
-            }
-        }
+            ),
+        };
 
-        Poll::Pending
+        return Poll::Ready(action);
     }
 }
 
@@ -467,14 +421,4 @@ impl AsyncRead for RelayedConnection {
             }
         }
     }
-}
-
-enum RqstPendingConnection {
-    Reservation {
-        to_listener: Sender<transport::ToListenerMsg>,
-    },
-    Circuit {
-        dst_peer_id: PeerId,
-        send_back: oneshot::Sender<Result<RelayedConnection, ()>>,
-    },
 }
