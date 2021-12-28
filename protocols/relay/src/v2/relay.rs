@@ -29,12 +29,17 @@ use instant::Instant;
 use libp2p_core::connection::{ConnectedPoint, ConnectionId};
 use libp2p_core::multiaddr::Protocol;
 use libp2p_core::PeerId;
-use libp2p_swarm::{NetworkBehaviour, NetworkBehaviourAction, NotifyHandler, PollParameters};
+use libp2p_swarm::{
+    NetworkBehaviour, NetworkBehaviourAction, NotifyHandler, PollParameters,
+    ProtocolsHandlerUpgrErr,
+};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::num::NonZeroU32;
 use std::ops::Add;
 use std::task::{Context, Poll};
 use std::time::Duration;
+
+use super::protocol::outbound_stop;
 
 /// Configuration for the [`Relay`] [`NetworkBehaviour`].
 ///
@@ -43,10 +48,12 @@ use std::time::Duration;
 /// [`Config::max_circuit_duration`] may not exceed [`u32::MAX`].
 pub struct Config {
     pub max_reservations: usize,
+    pub max_reservations_per_peer: usize,
     pub reservation_duration: Duration,
     pub reservation_rate_limiters: Vec<Box<dyn rate_limiter::RateLimiter>>,
 
     pub max_circuits: usize,
+    pub max_circuits_per_peer: usize,
     pub max_circuit_duration: Duration,
     pub max_circuit_bytes: u64,
     pub circuit_src_rate_limiters: Vec<Box<dyn rate_limiter::RateLimiter>>,
@@ -82,10 +89,12 @@ impl Default for Config {
 
         Config {
             max_reservations: 128,
+            max_reservations_per_peer: 4,
             reservation_duration: Duration::from_secs(60 * 60),
             reservation_rate_limiters,
 
             max_circuits: 16,
+            max_circuits_per_peer: 4,
             max_circuit_duration: Duration::from_secs(2 * 60),
             max_circuit_bytes: 1 << 17, // 128 kibibyte
             circuit_src_rate_limiters,
@@ -116,6 +125,10 @@ pub enum Event {
     },
     /// An inbound reservation has timed out.
     ReservationTimedOut { src_peer_id: PeerId },
+    CircuitReqReceiveFailed {
+        src_peer_id: PeerId,
+        error: ProtocolsHandlerUpgrErr<void::Void>,
+    },
     /// An inbound circuit request has been denied.
     CircuitReqDenied {
         src_peer_id: PeerId,
@@ -131,6 +144,12 @@ pub enum Event {
     CircuitReqAccepted {
         src_peer_id: PeerId,
         dst_peer_id: PeerId,
+    },
+    /// An outbound connect for an inbound cirucit request failed.
+    CircuitReqOutboundConnectFailed {
+        src_peer_id: PeerId,
+        dst_peer_id: PeerId,
+        error: ProtocolsHandlerUpgrErr<outbound_stop::CircuitFailedReason>,
     },
     /// Accepting an inbound circuit request failed.
     CircuitReqAcceptFailed {
@@ -225,6 +244,7 @@ impl NetworkBehaviour for Relay {
             handler::Event::ReservationReqReceived {
                 inbound_reservation_req,
                 endpoint,
+                renewed,
             } => {
                 let now = Instant::now();
 
@@ -239,12 +259,23 @@ impl NetworkBehaviour for Relay {
                         },
                     }
                     .into()
-                } else if self
-                    .reservations
-                    .iter()
-                    .map(|(_, cs)| cs.len())
-                    .sum::<usize>()
-                    >= self.config.max_reservations
+                } else if
+                // Deny if it is a new reservation and exceeds `max_reservations_per_peer`.
+                (!renewed
+                    && self
+                        .reservations
+                        .get(&event_source)
+                        .map(|cs| cs.len())
+                        .unwrap_or(0)
+                        > self.config.max_reservations_per_peer)
+                    // Deny if it exceeds `max_reservations`.
+                    || self
+                        .reservations
+                        .iter()
+                        .map(|(_, cs)| cs.len())
+                        .sum::<usize>()
+                        >= self.config.max_reservations
+                    // Deny if it exceeds the allowed rate of reservations.
                     || !self
                         .config
                         .reservation_rate_limiters
@@ -253,7 +284,6 @@ impl NetworkBehaviour for Relay {
                             limiter.try_next(event_source, endpoint.get_remote_address(), now)
                         })
                 {
-                    // Deny reservation exceeding limits.
                     NetworkBehaviourAction::NotifyHandler {
                         handler: NotifyHandler::One(connection),
                         peer_id: event_source,
@@ -352,7 +382,9 @@ impl NetworkBehaviour for Relay {
                             status: message_proto::Status::PermissionDenied,
                         },
                     }
-                } else if self.circuits.len() >= self.config.max_circuits
+                } else if self.circuits.num_circuits_of_peer(event_source)
+                    > self.config.max_circuits_per_peer
+                    || self.circuits.len() >= self.config.max_circuits
                     || !self
                         .config
                         .circuit_src_rate_limiters
@@ -410,6 +442,15 @@ impl NetworkBehaviour for Relay {
                     }
                 };
                 self.queued_actions.push_back(action.into());
+            }
+            handler::Event::CircuitReqReceiveFailed { error } => {
+                self.queued_actions.push_back(
+                    NetworkBehaviourAction::GenerateEvent(Event::CircuitReqReceiveFailed {
+                        src_peer_id: event_source,
+                        error,
+                    })
+                    .into(),
+                );
             }
             handler::Event::CircuitReqDenied {
                 circuit_id,
@@ -476,6 +517,7 @@ impl NetworkBehaviour for Relay {
                 src_connection_id,
                 inbound_circuit_req,
                 status,
+                error,
             } => {
                 self.queued_actions.push_back(
                     NetworkBehaviourAction::NotifyHandler {
@@ -487,6 +529,14 @@ impl NetworkBehaviour for Relay {
                             status,
                         },
                     }
+                    .into(),
+                );
+                self.queued_actions.push_back(
+                    NetworkBehaviourAction::GenerateEvent(Event::CircuitReqOutboundConnectFailed {
+                        src_peer_id,
+                        dst_peer_id: event_source,
+                        error,
+                    })
                     .into(),
                 );
             }
@@ -604,6 +654,13 @@ impl CircuitsTracker {
         });
 
         removed
+    }
+
+    fn num_circuits_of_peer(&self, peer: PeerId) -> usize {
+        self.circuits
+            .iter()
+            .filter(|(_, c)| c.src_peer_id == peer || c.dst_peer_id == peer)
+            .count()
     }
 }
 
