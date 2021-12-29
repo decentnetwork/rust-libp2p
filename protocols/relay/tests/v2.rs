@@ -28,7 +28,7 @@ use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::choice::OrTransport;
 use libp2p::core::transport::{Boxed, MemoryTransport, Transport};
 use libp2p::core::PublicKey;
-use libp2p::core::{identity, upgrade, PeerId};
+use libp2p::core::{identity, PeerId};
 use libp2p::ping::{Ping, PingConfig, PingEvent};
 use libp2p::plaintext::PlainText2Config;
 use libp2p::relay::v2::client;
@@ -332,7 +332,7 @@ where
     StreamSink: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     transport
-        .upgrade(upgrade::Version::V1)
+        .upgrade()
         .authenticate(PlainText2Config { local_public_key })
         .multiplex(libp2p_yamux::YamuxConfig::default())
         .boxed()

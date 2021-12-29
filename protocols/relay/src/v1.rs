@@ -27,7 +27,7 @@
 //! # use libp2p_core::transport::memory::MemoryTransport;
 //! # use libp2p_relay::v1::{RelayConfig, new_transport_and_behaviour};
 //! # use libp2p_swarm::{Swarm, dial_opts::DialOpts};
-//! # use libp2p_core::{identity, Multiaddr, multiaddr::Protocol, PeerId, upgrade, Transport};
+//! # use libp2p_core::{identity, Multiaddr, multiaddr::Protocol, PeerId, Transport};
 //! # use libp2p_yamux::YamuxConfig;
 //! # use libp2p_plaintext::PlainText2Config;
 //! # use std::convert::TryInto;
@@ -46,7 +46,7 @@
 //! );
 //!
 //! let transport = relay_transport
-//!     .upgrade(upgrade::Version::V1)
+//!     .upgrade()
 //!     .authenticate(plaintext)
 //!     .multiplex(YamuxConfig::default())
 //!     .boxed();
