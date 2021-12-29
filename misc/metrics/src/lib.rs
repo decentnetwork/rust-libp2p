@@ -25,6 +25,8 @@
 //!
 //! See `examples` directory for more.
 
+#[cfg(feature = "dcutr")]
+mod dcutr;
 #[cfg(feature = "gossipsub")]
 mod gossipsub;
 #[cfg(feature = "identify")]
@@ -33,12 +35,16 @@ mod identify;
 mod kad;
 #[cfg(feature = "ping")]
 mod ping;
+#[cfg(feature = "relay")]
+mod relay;
 mod swarm;
 
 use open_metrics_client::registry::Registry;
 
 /// Set of Swarm and protocol metrics derived from emitted events.
 pub struct Metrics {
+    #[cfg(feature = "dcutr")]
+    dcutr: dcutr::Metrics,
     #[cfg(feature = "gossipsub")]
     gossipsub: gossipsub::Metrics,
     #[cfg(feature = "identify")]
@@ -47,6 +53,8 @@ pub struct Metrics {
     kad: kad::Metrics,
     #[cfg(feature = "ping")]
     ping: ping::Metrics,
+    #[cfg(feature = "relay")]
+    relay: relay::Metrics,
     swarm: swarm::Metrics,
 }
 
@@ -62,6 +70,8 @@ impl Metrics {
     pub fn new(registry: &mut Registry) -> Self {
         let sub_registry = registry.sub_registry_with_prefix("libp2p");
         Self {
+            #[cfg(feature = "dcutr")]
+            dcutr: dcutr::Metrics::new(sub_registry),
             #[cfg(feature = "gossipsub")]
             gossipsub: gossipsub::Metrics::new(sub_registry),
             #[cfg(feature = "identify")]
@@ -70,6 +80,8 @@ impl Metrics {
             kad: kad::Metrics::new(sub_registry),
             #[cfg(feature = "ping")]
             ping: ping::Metrics::new(sub_registry),
+            #[cfg(feature = "relay")]
+            relay: relay::Metrics::new(sub_registry),
             swarm: swarm::Metrics::new(sub_registry),
         }
     }

@@ -250,7 +250,7 @@ fn mk_transport(muxer: MuxerChoice) -> (PeerId, transport::Boxed<(PeerId, Stream
         peer_id,
         TcpConfig::new()
             .nodelay(true)
-            .upgrade(upgrade::Version::V1)
+            .upgrade()
             .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
             .multiplex(match muxer {
                 MuxerChoice::Yamux => upgrade::EitherUpgrade::A(yamux::YamuxConfig::default()),

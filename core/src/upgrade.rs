@@ -70,7 +70,10 @@ mod transfer;
 use futures::future::Future;
 
 pub use self::{
-    apply::{apply, apply_inbound, apply_outbound, InboundUpgradeApply, OutboundUpgradeApply},
+    apply::{
+        apply, apply_authentication, apply_inbound, apply_outbound, AuthenticationUpgradeApply,
+        AuthenticationVersion, InboundUpgradeApply, OutboundUpgradeApply, Version,
+    },
     denied::DeniedUpgrade,
     either::EitherUpgrade,
     error::UpgradeError,
@@ -81,7 +84,7 @@ pub use self::{
     transfer::{read_length_prefixed, read_varint, write_length_prefixed, write_varint},
 };
 pub use crate::Negotiated;
-pub use multistream_select::{NegotiatedComplete, NegotiationError, ProtocolError, Version};
+pub use multistream_select::{NegotiatedComplete, NegotiationError, ProtocolError, Role};
 
 /// Types serving as protocol names.
 ///
