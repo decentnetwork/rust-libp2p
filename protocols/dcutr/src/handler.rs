@@ -47,7 +47,7 @@ impl IntoProtocolsHandler for Prototype {
     type Handler = Either<relayed::Handler, Either<direct::Handler, DummyProtocolsHandler>>;
 
     fn into_handler(self, _remote_peer_id: &PeerId, endpoint: &ConnectedPoint) -> Self::Handler {
-        let is_relayed_connection = crate::is_relayed_connection(endpoint);
+        let is_relayed_connection = endpoint.is_relayed();
 
         match self {
             Self::UnknownConnection => {
