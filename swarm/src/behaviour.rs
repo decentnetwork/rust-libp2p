@@ -383,7 +383,7 @@ pub enum NetworkBehaviourAction<
     /// # use libp2p::core::connection::ConnectionId;
     /// # use libp2p::core::identity;
     /// # use libp2p::core::transport::{MemoryTransport, Transport};
-    /// # use libp2p::core::upgrade::{self, DeniedUpgrade, InboundUpgrade, OutboundUpgrade};
+    /// # use libp2p::core::upgrade::{DeniedUpgrade, InboundUpgrade, OutboundUpgrade};
     /// # use libp2p::core::PeerId;
     /// # use libp2p::plaintext::PlainText2Config;
     /// # use libp2p::swarm::{
@@ -402,7 +402,7 @@ pub enum NetworkBehaviourAction<
     /// # let local_peer_id = PeerId::from(local_public_key.clone());
     /// #
     /// # let transport = MemoryTransport::default()
-    /// #     .upgrade(upgrade::Version::V1)
+    /// #     .upgrade()
     /// #     .authenticate(PlainText2Config { local_public_key })
     /// #     .multiplex(yamux::YamuxConfig::default())
     /// #     .boxed();

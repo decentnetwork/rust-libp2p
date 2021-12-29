@@ -1,13 +1,21 @@
 # 0.11.0 [unreleased]
 
-- Migrate to Rust edition 2021 (see [PR 2339]).
+- Add support for [simultaneous open extension] via `Version::V1SimultaneousOpen`.
 
-[PR 2339]: https://github.com/libp2p/rust-libp2p/pull/2339
+  [`Role`] struct returned by `dialer_select_proto` `Future` can be ignored unless
+  `Version::V1SimultaneousOpen` is used.
+
+  This is one important component of the greater effort to support hole punching in rust-libp2p.
+
+  See [PR 2066].
 
 # 0.10.4 [2021-11-01]
 
 - Implement `From<io::Error> for ProtocolError` instead of `Into`.
   [PR 2169](https://github.com/libp2p/rust-libp2p/pull/2169)
+
+[simultaneous open extension]: https://github.com/libp2p/specs/blob/master/connections/simopen.md
+[PR 2066]: https://github.com/libp2p/rust-libp2p/pull/2066
 
 # 0.10.3 [2021-03-17]
 

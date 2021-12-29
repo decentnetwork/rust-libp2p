@@ -204,7 +204,7 @@ pub async fn development_transport(
         .expect("Signing libp2p-noise static DH keypair failed.");
 
     Ok(transport
-        .upgrade(core::upgrade::Version::V1)
+        .upgrade()
         .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
         .multiplex(core::upgrade::SelectUpgrade::new(
             yamux::YamuxConfig::default(),
@@ -261,7 +261,7 @@ pub fn tokio_development_transport(
         .expect("Signing libp2p-noise static DH keypair failed.");
 
     Ok(transport
-        .upgrade(core::upgrade::Version::V1)
+        .upgrade()
         .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
         .multiplex(core::upgrade::SelectUpgrade::new(
             yamux::YamuxConfig::default(),

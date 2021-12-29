@@ -35,6 +35,7 @@ use std::{
     error::Error,
     fmt, io,
     pin::Pin,
+    str::FromStr,
     task::{Context, Poll},
 };
 use unsigned_varint as uvi;
@@ -48,6 +49,20 @@ const MSG_MULTISTREAM_1_0: &[u8] = b"/multistream/1.0.0\n";
 const MSG_PROTOCOL_NA: &[u8] = b"na\n";
 /// The encoded form of a multistream-select 'ls' message.
 const MSG_LS: &[u8] = b"ls\n";
+/// The encoded form of a 'select:' message of the multistream-select
+/// simultaneous open protocol extension.
+const MSG_SELECT: &[u8] = b"select:";
+/// The encoded form of a 'initiator' message of the multistream-select
+/// simultaneous open protocol extension.
+const MSG_INITIATOR: &[u8] = b"initiator\n";
+/// The encoded form of a 'responder' message of the multistream-select
+/// simultaneous open protocol extension.
+const MSG_RESPONDER: &[u8] = b"responder\n";
+
+/// The identifier of the multistream-select simultaneous open protocol
+/// extension.
+pub(crate) const SIM_OPEN_ID: Protocol =
+    Protocol(Bytes::from_static(b"/libp2p/simultaneous-connect"));
 
 /// The multistream-select header lines preceeding negotiation.
 ///
@@ -61,7 +76,7 @@ pub enum HeaderLine {
 impl From<Version> for HeaderLine {
     fn from(v: Version) -> HeaderLine {
         match v {
-            Version::V1 | Version::V1Lazy => HeaderLine::V1,
+            Version::V1 | Version::V1Lazy | Version::V1SimultaneousOpen => HeaderLine::V1,
         }
     }
 }
@@ -119,6 +134,9 @@ pub enum Message {
     Protocols(Vec<Protocol>),
     /// A message signaling that a requested protocol is not available.
     NotAvailable,
+    Select(u64),
+    Initiator,
+    Responder,
 }
 
 impl Message {
@@ -160,6 +178,22 @@ impl Message {
                 dest.put(MSG_PROTOCOL_NA);
                 Ok(())
             }
+            Message::Select(nonce) => {
+                dest.put(MSG_SELECT);
+                dest.put(nonce.to_string().as_ref());
+                dest.put_u8(b'\n');
+                Ok(())
+            }
+            Message::Initiator => {
+                dest.reserve(MSG_INITIATOR.len());
+                dest.put(MSG_INITIATOR);
+                Ok(())
+            }
+            Message::Responder => {
+                dest.reserve(MSG_RESPONDER.len());
+                dest.put(MSG_RESPONDER);
+                Ok(())
+            }
         }
     }
 
@@ -175,6 +209,26 @@ impl Message {
 
         if msg == MSG_LS {
             return Ok(Message::ListProtocols);
+        }
+
+        if msg.len() > MSG_SELECT.len() + 1 /* \n */
+            && msg[.. MSG_SELECT.len()] == *MSG_SELECT
+            && msg.last() == Some(&b'\n')
+        {
+            if let Some(nonce) = std::str::from_utf8(&msg[MSG_SELECT.len()..msg.len() - 1])
+                .ok()
+                .and_then(|s| u64::from_str(s).ok())
+            {
+                return Ok(Message::Select(nonce));
+            }
+        }
+
+        if msg == MSG_INITIATOR {
+            return Ok(Message::Initiator);
+        }
+
+        if msg == MSG_RESPONDER {
+            return Ok(Message::Responder);
         }
 
         // If it starts with a `/`, ends with a line feed without any

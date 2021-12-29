@@ -34,9 +34,7 @@
 use async_std::io;
 use futures::{prelude::*, select};
 use libp2p::{
-    core::{
-        either::EitherTransport, muxing::StreamMuxerBox, transport, transport::upgrade::Version,
-    },
+    core::{either::EitherTransport, muxing::StreamMuxerBox, transport},
     gossipsub::{self, Gossipsub, GossipsubConfigBuilder, GossipsubEvent, MessageAuthenticity},
     identify::{Identify, IdentifyConfig, IdentifyEvent},
     identity,
@@ -69,7 +67,7 @@ pub fn build_transport(
         None => EitherTransport::Right(base_transport),
     };
     maybe_encrypted
-        .upgrade(Version::V1)
+        .upgrade()
         .authenticate(noise_config)
         .multiplex(yamux_config)
         .timeout(Duration::from_secs(20))

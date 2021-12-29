@@ -39,17 +39,20 @@ use std::{
 type TestTransport = transport::Boxed<(PeerId, StreamMuxerBox)>;
 type TestNetwork = Network<TestTransport, TestHandler>;
 
-fn mk_transport(up: upgrade::Version) -> (PeerId, TestTransport) {
+fn mk_transport(version: upgrade::Version) -> (PeerId, TestTransport) {
     let keys = identity::Keypair::generate_ed25519();
     let id = keys.public().to_peer_id();
     (
         id,
         MemoryTransport::default()
-            .upgrade(up)
-            .authenticate(PlainText2Config {
-                local_public_key: keys.public(),
-            })
-            .multiplex(MplexConfig::default())
+            .upgrade()
+            .authenticate_with_version(
+                PlainText2Config {
+                    local_public_key: keys.public(),
+                },
+                version.into(),
+            )
+            .multiplex_with_version(MplexConfig::default(), version)
             .boxed(),
     )
 }
@@ -60,9 +63,9 @@ fn mk_transport(up: upgrade::Version) -> (PeerId, TestTransport) {
 fn transport_upgrade() {
     let _ = env_logger::try_init();
 
-    fn run(up: upgrade::Version) {
-        let (dialer_id, dialer_transport) = mk_transport(up);
-        let (listener_id, listener_transport) = mk_transport(up);
+    fn run(version: upgrade::Version) {
+        let (dialer_id, dialer_transport) = mk_transport(version);
+        let (listener_id, listener_transport) = mk_transport(version);
 
         let listen_addr = Multiaddr::from(Protocol::Memory(random::<u64>()));
 
