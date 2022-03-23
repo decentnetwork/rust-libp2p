@@ -35,6 +35,22 @@ default = [
     "websocket",
     "yamux",
 ]
+
+decentnet = [
+    "tcp-tokio", 
+    "relay", 
+    "request-response", 
+    "rendezvous", 
+    "dcutr", 
+    "floodsub", 
+    "identify", 
+    "kad", 
+    "mdns", 
+    "noise", 
+    "ping", 
+    "mplex"
+]
+
 autonat = ["libp2p-autonat"]
 dcutr = ["libp2p-dcutr", "libp2p-metrics/dcutr"]
 deflate = ["libp2p-deflate"]
