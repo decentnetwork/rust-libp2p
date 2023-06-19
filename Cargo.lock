@@ -2765,7 +2765,7 @@ dependencies = [
  "quickcheck",
  "quinn-proto",
  "rand 0.8.5",
- "rustls 0.20.8",
+ "rustls 0.21.2",
  "thiserror",
  "tokio",
 ]
@@ -2935,7 +2935,7 @@ dependencies = [
  "libp2p-yamux",
  "rcgen 0.10.0",
  "ring",
- "rustls 0.20.8",
+ "rustls 0.21.2",
  "thiserror",
  "tokio",
  "webpki 0.22.0",
@@ -4282,6 +4282,17 @@ dependencies = [
  "ring",
  "sct 0.7.0",
  "webpki 0.22.0",
+]
+
+[[package]]
+name = "rustls"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e32ca28af694bc1bbf399c33a516dbdf1c90090b8ab23c2bc24f834aa2247f5f"
+dependencies = [
+ "ring",
+ "rustls-webpki",
+ "sct 0.7.0",
 ]
 
 [[package]]
